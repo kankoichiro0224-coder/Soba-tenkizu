@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相場天気図 — 日経VI × Fear &amp; Greed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#10161f;
+    --bg-card:#1b2430;
+    --bg-card-2:#212c3a;
+    --ink:#eae3d2;
+    --ink-dim:#8f9aa8;
+    --line:rgba(234,227,210,0.10);
+    --storm:#c1440e;
+    --storm-soft:rgba(193,68,14,0.16);
+    --calm:#3f9b8c;
+    --calm-soft:rgba(63,155,140,0.16);
+    --gold:#c9a227;
+    --gold-soft:rgba(201,162,39,0.14);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:#10161f;color:var(--ink);}
+  body{
+    font-family:'Zen Kaku Gothic New', sans-serif;
+    min-height:100vh;
+    padding:28px 16px 48px;
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(63,155,140,0.10), transparent 45%),
+      radial-gradient(ellipse at 90% 0%, rgba(193,68,14,0.10), transparent 40%),
+      var(--bg);
+  }
+  .wrap{max-width:880px;margin:0 auto;}
+
+  /* header */
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    border-bottom:1px solid var(--line);
+    padding-bottom:16px;margin-bottom:22px;
+    flex-wrap:wrap;gap:12px;
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;letter-spacing:0.18em;color:var(--gold);
+    text-transform:uppercase;margin-bottom:6px;
+  }
+  h1{
+    font-family:'Shippori Mincho', serif;
+    font-weight:800;font-size:clamp(26px,5vw,38px);
+    margin:0;letter-spacing:0.02em;
+  }
+  .updated-block{text-align:right;}
+  .updated-label{font-size:11px;color:var(--ink-dim);font-family:'JetBrains Mono',monospace;}
+  .updated-time{font-size:14px;font-family:'JetBrains Mono',monospace;color:var(--ink);margin-top:2px;}
+  button#refresh{
+    margin-top:8px;
+    background:var(--gold-soft);
+    border:1px solid rgba(201,162,39,0.45);
+    color:var(--gold);
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px;letter-spacing:0.05em;
+    padding:7px 14px;border-radius:3px;
+    cursor:pointer;transition:all .15s ease;
+  }
+  button#refresh:hover{background:rgba(201,162,39,0.26);}
+  button#refresh:disabled{opacity:0.5;cursor:progress;}
+
+  /* gauges row */
+  .gauges{
+    display:grid;grid-template-columns:1fr 1fr;gap:16px;
+    margin-bottom:18px;
+  }
+  @media(max-width:640px){.gauges{grid-template-columns:1fr;}}
+
+  .card{
+    background:linear-gradient(180deg,var(--bg-card),var(--bg-card-2));
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:22px 22px 18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:2px;
+    background:var(--zone-color, var(--gold));
+  }
+  .card-title{
+    font-size:12px;letter-spacing:0.1em;color:var(--ink-dim);
+    font-family:'JetBrains Mono',monospace;text-transform:uppercase;
+    margin-bottom:2px;
+  }
+  .card-sub{font-size:11px;color:var(--ink-dim);margin-bottom:8px;}
+
+  .dial-area{display:flex;flex-direction:column;align-items:center;}
+  svg.dial{width:100%;max-width:230px;height:auto;}
+  .needle{transform-origin:115px 118px;transition:transform 1s cubic-bezier(.22,1,.36,1);}
+
+  .reading{display:flex;align-items:baseline;gap:8px;margin-top:6px;}
+  .reading .value{
+    font-family:'JetBrains Mono',monospace;font-weight:700;
+    font-size:34px;color:var(--ink);
+  }
+  .reading .unit{font-size:12px;color:var(--ink-dim);}
+  .zone-label{
+    font-family:'Shippori Mincho',serif;font-weight:800;
+    font-size:20px;margin-top:2px;color:var(--zone-color,var(--gold));
+    display:flex;align-items:center;gap:8px;
+  }
+  .zone-icon{width:22px;height:22px;flex:none;}
+  .as-of{font-size:10.5px;color:var(--ink-dim);margin-top:10px;font-family:'JetBrains Mono',monospace;}
+  .threshold-note{font-size:10px;color:var(--ink-dim);margin-top:4px;font-family:'JetBrains Mono',monospace;}
+
+  /* chance alert */
+  .chance-alert{
+    display:none;
+    align-items:center;gap:16px;
+    background:linear-gradient(135deg, rgba(201,162,39,0.22), rgba(63,155,140,0.16));
+    border:1px solid rgba(201,162,39,0.6);
+    border-radius:6px;
+    padding:18px 20px;
+    margin-bottom:18px;
+    position:relative;
+    overflow:hidden;
+    animation: chance-glow 2.2s ease-in-out infinite;
+  }
+  @keyframes chance-glow{
+    0%,100%{ box-shadow:0 0 0 0 rgba(201,162,39,0.0); }
+    50%{ box-shadow:0 0 26px 2px rgba(201,162,39,0.4); }
+  }
+  .chance-alert .chance-icon{ flex:none;width:40px;height:40px;color:var(--gold); }
+  .chance-alert .chance-body h2{
+    font-family:'Shippori Mincho',serif;font-weight:800;
+    font-size:20px;margin:0 0 4px;color:var(--gold);letter-spacing:0.03em;
+  }
+  .chance-alert .chance-body p{ margin:0;font-size:12.5px;line-height:1.7;color:var(--ink); }
+  @media (prefers-reduced-motion: reduce){ .chance-alert{ animation:none; } }
+
+  /* comment strip */
+  .comment{
+    background:var(--bg-card);border:1px solid var(--line);border-radius:6px;
+    padding:18px 20px;margin-bottom:18px;
+    display:flex;gap:14px;align-items:flex-start;
+  }
+  .comment .mark{
+    font-family:'Shippori Mincho',serif;font-weight:800;font-size:22px;
+    color:var(--gold);flex:none;
+  }
+  .comment p{margin:0;font-size:14.5px;line-height:1.75;color:var(--ink);}
+
+  /* explainer cards */
+  .explainers{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+  @media(max-width:640px){.explainers{grid-template-columns:1fr;}}
+  .explain{
+    border:1px solid var(--line);border-radius:6px;padding:16px 18px;
+    background:rgba(255,255,255,0.015);
+  }
+  .explain h3{
+    font-family:'Shippori Mincho',serif;font-size:15px;margin:0 0 6px;
+    color:var(--ink);font-weight:800;
+  }
+  .explain p{font-size:12.5px;line-height:1.7;color:var(--ink-dim);margin:0;}
+
+  .disclaimer{
+    font-size:11px;color:var(--ink-dim);line-height:1.7;
+    border-top:1px solid var(--line);padding-top:14px;margin-top:6px;
+  }
+  .disclaimer a{color:var(--gold);}
+
+  .state-msg{
+    text-align:center;padding:40px 10px;color:var(--ink-dim);
+    font-size:13px;font-family:'JetBrains Mono',monospace;
+  }
+  .error-msg{color:var(--storm);}
+
+  @media (prefers-reduced-motion: reduce){
+    .needle{transition:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="eyebrow">Market Weather Map</div>
+      <h1>本日の相場天気図</h1>
+    </div>
+    <div class="updated-block">
+      <div class="updated-label">最終更新</div>
+      <div class="updated-time" id="updatedTime">—</div>
+      <button id="refresh" onclick="fetchWeather()">更新する</button>
+    </div>
+  </header>
+
+  <div class="chance-alert" id="chanceAlert">
+    <svg class="chance-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2 3 14h7l-1 8 11-14h-7l1-6z"/>
+    </svg>
+    <div class="chance-body">
+      <h2>チャンス！</h2>
+      <p id="chanceText">日経VIが28を上回り、Fear &amp; Greedが20を下回りました。</p>
+    </div>
+  </div>
+
+  <div class="gauges">
+    <div class="card" id="viCard">
+      <div class="card-title">日経平均VI</div>
+      <div class="card-sub">Nikkei Volatility Index — 相場の「気圧」</div>
+      <div class="dial-area">
+        <svg class="dial" viewBox="0 0 230 140">
+          <path d="M 15 118 A 100 100 0 0 1 55 39" fill="none" stroke="#3f9b8c" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 55 39 A 100 100 0 0 1 115 18" fill="none" stroke="#7fb37a" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 115 18 A 100 100 0 0 1 175 39" fill="none" stroke="#c9a227" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 175 39 A 100 100 0 0 1 215 118" fill="none" stroke="#c1440e" stroke-width="14" stroke-linecap="round"/>
+          <line class="needle" id="viNeedle" x1="115" y1="118" x2="115" y2="30" stroke="#eae3d2" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="115" cy="118" r="7" fill="#eae3d2"/>
+          <circle cx="115" cy="118" r="3" fill="#10161f"/>
+        </svg>
+        <div class="reading">
+          <span class="value" id="viValue">--</span>
+          <span class="unit">pt</span>
+        </div>
+        <div class="zone-label" id="viZoneLabel" style="--zone-color:var(--gold)">
+          <svg class="zone-icon" id="viIcon" viewBox="0 0 24 24"></svg>
+          <span id="viZoneText">読み込み中</span>
+        </div>
+        <div class="as-of" id="viAsOf">&nbsp;</div>
+        <div class="threshold-note">アラート基準: 28pt超</div>
+      </div>
+    </div>
+
+    <div class="card" id="fgCard">
+      <div class="card-title">Fear &amp; Greed Index</div>
+      <div class="card-sub">CNN Money — 投資家心理の「風向き」</div>
+      <div class="dial-area">
+        <svg class="dial" viewBox="0 0 230 140">
+          <path d="M 15 118 A 100 100 0 0 1 55 39" fill="none" stroke="#c1440e" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 55 39 A 100 100 0 0 1 115 18" fill="none" stroke="#c98a4b" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 115 18 A 100 100 0 0 1 175 39" fill="none" stroke="#c9a227" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 175 39 A 100 100 0 0 1 215 118" fill="none" stroke="#3f9b8c" stroke-width="14" stroke-linecap="round"/>
+          <line class="needle" id="fgNeedle" x1="115" y1="118" x2="115" y2="30" stroke="#eae3d2" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="115" cy="118" r="7" fill="#eae3d2"/>
+          <circle cx="115" cy="118" r="3" fill="#10161f"/>
+        </svg>
+        <div class="reading">
+          <span class="value" id="fgValue">--</span>
+          <span class="unit">/ 100</span>
+        </div>
+        <div class="zone-label" id="fgZoneLabel" style="--zone-color:var(--gold)">
+          <svg class="zone-icon" id="fgIcon" viewBox="0 0 24 24"></svg>
+          <span id="fgZoneText">読み込み中</span>
+        </div>
+        <div class="as-of" id="fgAsOf">&nbsp;</div>
+        <div class="threshold-note">アラート基準: 20未満</div>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="comment" id="commentBox" style="display:none;">
+    <div class="mark">所感</div>
+    <p id="commentText"></p>
+  </div>
+
+  <div id="stateArea"></div>
+
+  <div class="explainers">
+    <div class="explain">
+      <h3>日経VIとは</h3>
+      <p>日経平均株価オプションの価格から算出される、今後1か月の予想変動率を示す指数。数値が高いほど市場が「荒れる」と見込まれていることを表し、平常時は15〜25程度、急落局面では50を超えることもあります。</p>
+    </div>
+    <div class="explain">
+      <h3>Fear &amp; Greed Indexとは</h3>
+      <p>CNNが7つの市場指標(値幅、モメンタム、需要など)を合成した米国株投資家心理指数。0に近いほど「極度の恐怖」、100に近いほど「極度の強欲」を意味し、逆張りの参考指標として使われることがあります。</p>
+    </div>
+  </div>
+
+  <div class="disclaimer">
+    数値は公開データを定期取得した参考値(最大30分程度の遅延あり)であり、取引時点の正確なリアルタイム値とは誤差が生じる場合があります。「チャンス」表示は日経VI・Fear&amp;Greedの両方が指定条件を満たしたことを機械的に知らせるだけで、投資助言ではありません。投資判断は必ず一次情報(JPX公式サイト・CNN公式サイト等)でご確認のうえ、自己責任で行ってください。
+  </div>
+
+</div>
+
+<script>
+const ICONS = {
+  sun: `<circle cx="12" cy="12" r="4.5" fill="currentColor"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="12" y1="1.5" x2="12" y2="4.2"/><line x1="12" y1="19.8" x2="12" y2="22.5"/><line x1="1.5" y1="12" x2="4.2" y2="12"/><line x1="19.8" y1="12" x2="22.5" y2="12"/><line x1="4.6" y1="4.6" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="19.4" y2="19.4"/><line x1="4.6" y1="19.4" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="19.4" y2="4.6"/></g>`,
+  cloudsun: `<circle cx="8" cy="8" r="3.2" fill="currentColor"/><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="8" y1="1.5" x2="8" y2="3.2"/><line x1="1.5" y1="8" x2="3.2" y2="8"/><line x1="3" y1="3" x2="4.2" y2="4.2"/></g><path d="M7 21h9.5a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 6.6 15.2 3.5 3.5 0 0 0 7 21z" fill="none" stroke="currentColor" stroke-width="1.6"/>`,
+  cloud: `<path d="M6 20h11a4.3 4.3 0 0 0 .6-8.56A6 6 0 0 0 5.9 13.9 3.8 3.8 0 0 0 6 20z" fill="none" stroke="currentColor" stroke-width="1.7"/>`,
+  rain: `<path d="M6 15h11a4.3 4.3 0 0 0 .6-8.56A6 6 0 0 0 5.9 8.9 3.8 3.8 0 0 0 6 15z" fill="none" stroke="currentColor" stroke-width="1.7"/><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="8" y1="18" x2="7" y2="21.5"/><line x1="12.5" y1="18" x2="11.5" y2="21.5"/><line x1="17" y1="18" x2="16" y2="21.5"/></g>`,
+  storm: `<path d="M6 13h10.5a4.1 4.1 0 0 0 .5-8.17A5.8 5.8 0 0 0 6 6.8 3.7 3.7 0 0 0 6 13z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M13 15.5 9.5 20h3l-1.3 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`
+};
+
+function setIcon(el, key){ el.innerHTML = ICONS[key]; }
+
+// --- alert thresholds -------------------------------------------------
+const VI_ALERT_THRESHOLD = 28;   // 日経VIがこれを上回ったら
+const FG_ALERT_THRESHOLD = 20;   // Fear&Greedがこれを下回ったら
+
+// --- zone logic -----------------------------------------------------
+function viZone(v){
+  if(v==null) return {key:'cloud', label:'データなし', color:'var(--ink-dim)'};
+  if(v<20)  return {key:'sun',      label:'快晴（平穏）', color:'var(--calm)'};
+  if(v<25)  return {key:'cloudsun', label:'晴れ',        color:'var(--calm)'};
+  if(v<35)  return {key:'cloud',    label:'曇り',        color:'var(--gold)'};
+  if(v<50)  return {key:'rain',     label:'雨（警戒）',   color:'var(--storm)'};
+  return       {key:'storm',    label:'嵐（要警戒）', color:'var(--storm)'};
+}
+function fgZone(v){
+  if(v==null) return {key:'cloud', label:'データなし', color:'var(--ink-dim)'};
+  if(v<25)  return {key:'storm',    label:'極度の恐怖', color:'var(--storm)'};
+  if(v<45)  return {key:'rain',     label:'恐怖',        color:'var(--storm)'};
+  if(v<55)  return {key:'cloud',    label:'中立',        color:'var(--gold)'};
+  if(v<75)  return {key:'cloudsun', label:'強欲',        color:'var(--calm)'};
+  return       {key:'sun',      label:'極度の強欲',   color:'var(--calm)'};
+}
+function setNeedle(el, frac){
+  const clamped = Math.max(0, Math.min(1, frac));
+  const angle = -90 + clamped*180;
+  el.style.transform = `rotate(${angle}deg)`;
+}
+
+function renderVI(value, asOf){
+  const z = viZone(value);
+  document.getElementById('viValue').textContent = value==null ? '--' : value.toFixed(1);
+  document.getElementById('viZoneText').textContent = z.label;
+  document.getElementById('viZoneLabel').style.setProperty('--zone-color', z.color);
+  document.getElementById('viCard').style.setProperty('--zone-color', z.color);
+  setIcon(document.getElementById('viIcon'), z.key);
+  document.getElementById('viIcon').style.color = z.color;
+  document.getElementById('viAsOf').textContent = asOf ? `時点: ${asOf}` : '\u00A0';
+  if(value!=null){
+    const frac = Math.max(0, Math.min(1, value/60));
+    setNeedle(document.getElementById('viNeedle'), frac);
+  }
+  return z;
+}
+function renderFG(value, asOf){
+  const z = fgZone(value);
+  document.getElementById('fgValue').textContent = value==null ? '--' : Math.round(value);
+  document.getElementById('fgZoneText').textContent = z.label;
+  document.getElementById('fgZoneLabel').style.setProperty('--zone-color', z.color);
+  document.getElementById('fgCard').style.setProperty('--zone-color', z.color);
+  setIcon(document.getElementById('fgIcon'), z.key);
+  document.getElementById('fgIcon').style.color = z.color;
+  document.getElementById('fgAsOf').textContent = asOf ? `時点: ${asOf}` : '\u00A0';
+  if(value!=null){
+    const frac = Math.max(0, Math.min(1, value/100));
+    setNeedle(document.getElementById('fgNeedle'), frac);
+  }
+  return z;
+}
+
+function renderChanceAlert(viVal, fgVal){
+  const el = document.getElementById('chanceAlert');
+  const text = document.getElementById('chanceText');
+  const isChance = viVal!=null && fgVal!=null &&
+    viVal > VI_ALERT_THRESHOLD && fgVal < FG_ALERT_THRESHOLD;
+  if(isChance){
+    text.textContent = `日経VIが${VI_ALERT_THRESHOLD}pt(現在${viVal.toFixed(1)})を上回り、Fear & Greedが${FG_ALERT_THRESHOLD}(現在${Math.round(fgVal)})を下回りました。両条件が同時に成立しています。`;
+    el.style.display = 'flex';
+  } else {
+    el.style.display = 'none';
+  }
+  return isChance;
+}
+
+function renderComment(viVal, fgVal){
+  const box = document.getElementById('commentBox');
+  const text = document.getElementById('commentText');
+  if(viVal==null && fgVal==null){ box.style.display='none'; return; }
+
+  const viHigh = viVal!=null && viVal>=35;
+  const viLow  = viVal!=null && viVal<25;
+  const fgFear = fgVal!=null && fgVal<45;
+  const fgGreed= fgVal!=null && fgVal>=55;
+
+  let msg;
+  if(viHigh && fgFear){
+    msg = '日経VI・投資家心理ともに警戒シグナル。ボラティリティの高まりと弱気心理が重なっており、相場は荒れ模様です。';
+  } else if(viLow && fgGreed){
+    msg = '日経VIは落ち着き、米国側の心理も強気寄り。穏やかな相場つきですが、楽観のしすぎには注意が必要な局面です。';
+  } else if(viHigh && fgGreed){
+    msg = '日本株の変動率は高い一方、米国投資家心理は強気。地域間で温度差があり、相場の方向感が定まりにくい状態です。';
+  } else if(viLow && fgFear){
+    msg = '日経VIは平静を保っていますが、米国側には弱気の兆し。海外発の風向き変化に注意しておきたいところです。';
+  } else {
+    msg = '両指標とも突出した動きはなく、平常運転の相場つきです。';
+  }
+  text.textContent = msg;
+  box.style.display = 'flex';
+}
+
+// --- data fetch (data.json は GitHub Actions が定期更新) ----------------
+async function fetchWeather(){
+  const btn = document.getElementById('refresh');
+  const stateArea = document.getElementById('stateArea');
+  btn.disabled = true;
+  btn.textContent = '取得中…';
+  stateArea.innerHTML = '';
+
+  try{
+    const response = await fetch('data.json?t=' + Date.now(), {cache:'no-store'});
+    if(!response.ok) throw new Error(`HTTP ${response.status}`);
+    const parsed = await response.json();
+
+    const num = o => o && typeof o.value === 'number' ? o.value : null;
+    const viVal = num(parsed.nikkei_vi), fgVal = num(parsed.fear_greed);
+
+    renderVI(viVal, parsed.nikkei_vi && parsed.nikkei_vi.as_of);
+    renderFG(fgVal, parsed.fear_greed && parsed.fear_greed.as_of);
+    renderChanceAlert(viVal, fgVal);
+    renderComment(viVal, fgVal);
+
+    if(viVal==null && fgVal==null){
+      stateArea.innerHTML = `<div class="state-msg error-msg">両指標ともデータがありません。しばらくしてから再度お試しください。</div>`;
+    }
+    const t = parsed.updated_at ? new Date(parsed.updated_at) : new Date();
+    document.getElementById('updatedTime').textContent =
+      t.toLocaleString('ja-JP', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+  }catch(err){
+    console.error(err);
+    stateArea.innerHTML = `<div class="state-msg error-msg">取得に失敗しました（${err.message}）。「更新する」を押して再試行してください。</div>`;
+  }finally{
+    btn.disabled = false;
+    btn.textContent = '更新する';
+  }
+}
+
+// initial paint (empty state) + auto fetch
+renderVI(null); renderFG(null);
+fetchWeather();
+</script>
+</body>
+</html>
